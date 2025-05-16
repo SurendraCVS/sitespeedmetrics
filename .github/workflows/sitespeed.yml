@@ -44,7 +44,7 @@ jobs:
             -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
-            --influxdb.host 172.17.0.2 \
+            --influxdb.host 0.0.0.0 \
             --influxdb.version 2 \
             --influxdb.organisation vega \
             --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
