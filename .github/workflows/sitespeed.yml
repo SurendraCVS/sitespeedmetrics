@@ -34,6 +34,7 @@ jobs:
 
       - name: installing influx
         run: | 
+          docker network create sitespeed-net
           docker run -d --name influxdb \
            --network sitespeed-net \
            -p 8086:8086 \
@@ -45,6 +46,7 @@ jobs:
            -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
           influxdb:latest
+          
         
       - name: Run Sitespeed.io Test
         run: |
@@ -59,7 +61,7 @@ jobs:
             -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
-            --influxdb.host localhost \
+            --influxdb.host influxdb \
             --influxdb.version 2 \
             --influxdb.organisation vega \
             --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
