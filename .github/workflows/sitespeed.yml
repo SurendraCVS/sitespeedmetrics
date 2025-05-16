@@ -1,19 +1,27 @@
 name: Run Sitespeed Test & Publish Report
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+
 jobs:
   run-sitespeed:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+
       - name: Generate Run ID (human-readable date)
         run: |
           echo "RUN_ID=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
           echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Install sitespeed.io InfluxDB plugin
+        run: |
+          npm install @sitespeed.io/plugin-influxdb -g
+
       - name: Run Sitespeed.io Test
         run: |
           mkdir -p sitespeed-result
@@ -24,12 +32,13 @@ jobs:
             https://vegastack.com \
             -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
-            --plugins.add ./plugins/influxdb \
+            --plugins.add @sitespeed.io/plugin-influxdb \
             --influxdb.host ${{ secrets.INFLUXDB_HOST }} \
             --influxdb.version 2 \
             --influxdb.bucket sitespeed \
             --influxdb.organisation vega \
             --influxdb.token ${{ secrets.INFLUXDB_TOKEN }}
+
       - name: Update report-mapping.json (append & sort desc)
         run: |
           MAPPING_FILE="sitespeed-result/report-mapping.json"
@@ -40,6 +49,7 @@ jobs:
           jq --arg id "${{ env.RUN_ID }}" --arg url "$REPORT_URL" --arg ts "${{ env.TIMESTAMP }}" \
             '. += [{"run_id": $id, "timestamp": $ts | tonumber, "report_url": $url}] | sort_by(.timestamp) | reverse' \
             $MAPPING_FILE > tmp.json && mv tmp.json $MAPPING_FILE
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
