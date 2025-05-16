@@ -20,17 +20,17 @@ jobs:
       
       - name: Setup InfluxDB plugin
         run: |
-          # Clone the official plugin repository
-          git clone https://github.com/sitespeedio/plugin-influxdb.git
+          # Create sitespeed.io plugins directory structure
+          mkdir -p plugins
           
-          # Create a Docker plugin directory to mount
-          mkdir -p docker-plugins/influxdb
-          
-          # Copy plugin files to the plugin directory
-          cp -r plugin-influxdb/* docker-plugins/influxdb/
+          # Clone the official plugin repository directly to the plugins directory
+          git clone https://github.com/sitespeedio/plugin-influxdb.git plugins/influxdb
           
           # Install plugin dependencies
-          cd docker-plugins/influxdb && npm install && cd ../..
+          cd plugins/influxdb && npm install && cd ../..
+          
+          # Debug - List directory structure
+          find plugins -type f | sort
 
       - name: Run Sitespeed.io Test
         run: |
@@ -38,13 +38,12 @@ jobs:
           docker run --rm \
             --shm-size=1g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
-            -v "$(pwd)/docker-plugins:/plugins" \
+            -v "$(pwd)/plugins:/plugins" \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
             -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
-            --plugins.load /plugins \
-            --plugins.add influxdb \
+            --plugins.add /plugins/influxdb \
             --influxdb.host 172.17.0.2 \
             --influxdb.version 2 \
             --influxdb.organisation vega \
