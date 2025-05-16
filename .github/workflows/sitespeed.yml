@@ -44,6 +44,8 @@ jobs:
             -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
             -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
             influxdb:latest
+          sudo apt install net-tools 
+          netstat -nl
         
       - name: Run Sitespeed.io Test
         run: |
