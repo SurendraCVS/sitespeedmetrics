@@ -60,7 +60,6 @@ jobs:
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
             --influxdb.host 0.0.0.0 \
-            --influxdb.port 
             --influxdb.version 2 \
             --influxdb.organisation vega \
             --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
