@@ -17,10 +17,20 @@ jobs:
         run: |
           echo "RUN_ID=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
           echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
-
-      - name: Install sitespeed.io InfluxDB plugin
+      
+      - name: Setup InfluxDB plugin
         run: |
-          npm install @sitespeed.io/plugin-influxdb -g
+          # Clone the official plugin repository
+          git clone https://github.com/sitespeedio/plugin-influxdb.git
+          
+          # Create a Docker plugin directory to mount
+          mkdir -p docker-plugins/influxdb
+          
+          # Copy plugin files to the plugin directory
+          cp -r plugin-influxdb/* docker-plugins/influxdb/
+          
+          # Install plugin dependencies
+          cd docker-plugins/influxdb && npm install && cd ../..
 
       - name: Run Sitespeed.io Test
         run: |
@@ -28,16 +38,18 @@ jobs:
           docker run --rm \
             --shm-size=1g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
+            -v "$(pwd)/docker-plugins:/plugins" \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
             -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
-            --plugins.add @sitespeed.io/plugin-influxdb \
-            --influxdb.host ${{ secrets.INFLUXDB_HOST }} \
+            --plugins.load /plugins \
+            --plugins.add influxdb \
+            --influxdb.host 172.17.0.2 \
             --influxdb.version 2 \
-            --influxdb.bucket sitespeed \
             --influxdb.organisation vega \
-            --influxdb.token ${{ secrets.INFLUXDB_TOKEN }}
+            --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
+            --influxdb.bucket sitespeed
 
       - name: Update report-mapping.json (append & sort desc)
         run: |
