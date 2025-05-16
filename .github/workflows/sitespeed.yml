@@ -34,7 +34,7 @@ jobs:
 
       - name: installing influx
         run: | 
-          docker run -d --name influxdb \
+          sudo docker run -d --name influxdb \
             -p 8086:8086 \
             -v $PWD:/var/lib/influxdb2 \
             -e DOCKER_INFLUXDB_INIT_MODE=setup \
@@ -49,8 +49,7 @@ jobs:
         
       - name: Run Sitespeed.io Test
         run: |
-          sudo chown -R $USER:$USER $(pwd)
-          chmod -R 755 $(pwd)
+          pwd
           sudo mkdir -p sitespeed-result
           sudo docker run --rm \
             --shm-size=1g \
