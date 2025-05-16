@@ -34,21 +34,23 @@ jobs:
 
       - name: installing influx
         run: | 
-         docker run -d --name influxdb \
-            -p 8086:8086 \
-            -v $PWD:/var/lib/influxdb2 \
-            -e DOCKER_INFLUXDB_INIT_MODE=setup \
-            -e DOCKER_INFLUXDB_INIT_USERNAME=surendracv \
-            -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
-            -e DOCKER_INFLUXDB_INIT_ORG=vega \
-            -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
-            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
-            influxdb:latest
+          docker run -d --name influxdb \
+           --network sitespeed-net \
+           -p 8086:8086 \
+           -v $PWD:/var/lib/influxdb2 \
+           -e DOCKER_INFLUXDB_INIT_MODE=setup \
+           -e DOCKER_INFLUXDB_INIT_USERNAME=surendracv \
+           -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
+           -e DOCKER_INFLUXDB_INIT_ORG=vega \
+           -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
+           -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
+          influxdb:latest
         
       - name: Run Sitespeed.io Test
         run: |
           mkdir -p sitespeed-result
           docker run --rm \
+            --network sitespeed-net \
             --shm-size=1g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
