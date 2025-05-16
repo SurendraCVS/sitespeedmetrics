@@ -49,8 +49,8 @@ jobs:
         
       - name: Run Sitespeed.io Test
         run: |
-          mkdir -p sitespeed-result
-          docker run --rm \
+          sudo mkdir -p sitespeed-result
+          sudo docker run --rm \
             --shm-size=1g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
