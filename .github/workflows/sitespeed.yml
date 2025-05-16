@@ -34,7 +34,7 @@ jobs:
 
       - name: installing influx
         run: | 
-          sudo docker run -d --name influxdb \
+         docker run -d --name influxdb \
             -p 8086:8086 \
             -v $PWD:/var/lib/influxdb2 \
             -e DOCKER_INFLUXDB_INIT_MODE=setup \
@@ -44,14 +44,11 @@ jobs:
             -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
             -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
             influxdb:latest
-          sudo apt install net-tools 
-          netstat -nl
         
       - name: Run Sitespeed.io Test
         run: |
-          pwd
-          sudo mkdir -p sitespeed-result
-          sudo docker run --rm \
+          mkdir -p sitespeed-result
+          docker run --rm \
             --shm-size=1g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
