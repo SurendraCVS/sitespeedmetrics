@@ -67,6 +67,10 @@ jobs:
             --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
             --influxdb.bucket sitespeed
 
+      - name: setting up permissions
+        run: |
+          sudo chown -R $USER:$USER .
+
       - name: Update report-mapping.json (append & sort desc)
         run: |
           MAPPING_FILE="sitespeed-result/report-mapping.json"
