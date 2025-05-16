@@ -32,6 +32,20 @@ jobs:
           # Debug - List directory structure
           find plugins -type f | sort
 
+      - name: installing influx
+        run: | 
+          docker pull influxdb
+          docker run -d --name influxdb \
+            -p 8086:8086 \
+            -v $PWD:/var/lib/influxdb2 \
+            -e DOCKER_INFLUXDB_INIT_MODE=setup \
+            -e DOCKER_INFLUXDB_INIT_USERNAME=surendracv \
+            -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
+            -e DOCKER_INFLUXDB_INIT_ORG=vega \
+            -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
+            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
+            influxdb:2.7
+        
       - name: Run Sitespeed.io Test
         run: |
           mkdir -p sitespeed-result
@@ -45,6 +59,7 @@ jobs:
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
             --influxdb.host 0.0.0.0 \
+            --influxdb.port 
             --influxdb.version 2 \
             --influxdb.organisation vega \
             --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
