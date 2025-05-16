@@ -49,6 +49,8 @@ jobs:
         
       - name: Run Sitespeed.io Test
         run: |
+          sudo chown -R $USER:$USER $(pwd)
+          chmod -R 755 $(pwd)
           sudo mkdir -p sitespeed-result
           sudo docker run --rm \
             --shm-size=1g \
