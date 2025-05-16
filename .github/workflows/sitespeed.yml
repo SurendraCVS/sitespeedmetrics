@@ -24,8 +24,8 @@ jobs:
             https://vegastack.com \
             -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
-            --plugins.add @sitespeed.io/plugin-influxdb \
-            --influxdb.host 172.17.0.2 \
+            --plugins.add ./plugins/influxdb \
+            --influxdb.host ${{ secrets.INFLUXDB_HOST }} \
             --influxdb.version 2 \
             --influxdb.bucket sitespeed \
             --influxdb.organisation vega \
