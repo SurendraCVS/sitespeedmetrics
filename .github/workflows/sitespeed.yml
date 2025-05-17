@@ -20,18 +20,11 @@ jobs:
 
       - name: Setup InfluxDB plugin
         run: |
-          # Create sitespeed.io plugins directory structure
           mkdir -p plugins
-          
-          # Clone the official plugin repository directly to the plugins directory
           git clone https://github.com/sitespeedio/plugin-influxdb.git plugins/influxdb
-          
-          # Install plugin dependencies
           cd plugins/influxdb && npm install && cd ../..
-          
-          # Debug - List directory structure
           echo "--- Plugin directory contents ---"
-          find plugins -ls # Using -ls for more details
+          find plugins -ls 
           echo "--- End plugin directory contents ---"
 
       - name: Setup and Start InfluxDB (Debug Enhanced)
@@ -82,10 +75,9 @@ jobs:
 
           echo "Executing InfluxDB container command..."
           eval "$COMMAND"
-          DOCKER_RUN_EXIT_CODE=$? # Capture exit code of the docker run command
+          DOCKER_RUN_EXIT_CODE=$? 
 
           echo "Docker run command finished with exit code: $DOCKER_RUN_EXIT_CODE"
-
           sleep 5 
 
           echo "Checking InfluxDB container status..."
@@ -106,25 +98,23 @@ jobs:
               docker logs "$STOPPED_CONTAINER_ID" --tail 100
             else
               echo "No InfluxDB container found (neither running nor stopped/failed)."
-              echo "This could indicate the 'docker run' command failed before even creating a container."
             fi
             
             if [ "$DOCKER_RUN_EXIT_CODE" -ne 0 ]; then
                 echo "The 'docker run' command itself failed with exit code $DOCKER_RUN_EXIT_CODE."
             fi
-            exit 1 # Explicitly fail the step
+            exit 1 
           fi
           
       - name: Run Sitespeed.io Test
         shell: bash 
         run: |
-          set -eo pipefail # Add shell options here
-          set -x # Enable command echoing for this step too
+          set -eo pipefail 
+          set -x 
           mkdir -p sitespeed-result 
           docker run --rm \
-            --user "$(id -u):$(id -g)" \
             --network sitespeed-net \
-            --shm-size=1g \
+            --shm-size=2g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
             sitespeedio/sitespeed.io:latest \
@@ -136,22 +126,49 @@ jobs:
             --influxdb.version 2 \
             --influxdb.organisation vega \
             --influxdb.token '${{ secrets.INFLUXDB_TOKEN }}' \
-            --influxdb.bucket sitespeed
-          # set +x # Optional: unset if needed
+            --influxdb.bucket sitespeed \
+            --browsertime.chrome.args="no-sandbox" \
+            --browsertime.chrome.args="disable-dev-shm-usage" \
+            --browsertime.firefox.preference security.sandbox.content.level=0
+
+      - name: Chown Sitespeed Results
+        shell: bash
+        run: |
+          set -x
+          echo "Changing ownership of sitespeed-result directory..."
+          if [ -d "./sitespeed-result" ]; then
+            sudo chown -R $(id -u):$(id -g) ./sitespeed-result
+            echo "Ownership changed for ./sitespeed-result"
+            ls -ld ./sitespeed-result 
+            ls -l ./sitespeed-result 
+          else
+            echo "Directory ./sitespeed-result does not exist. Skipping chown."
+          fi
 
       - name: Update report-mapping.json (append & sort desc)
         shell: bash 
         run: |
-          set -eo pipefail # Add shell options here
+          set -eo pipefail 
           set -x 
           MAPPING_FILE="sitespeed-result/report-mapping.json"
           REPORT_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ env.RUN_ID }}/index.html"
           
+          if [ ! -d "sitespeed-result/${{ env.RUN_ID }}" ]; then
+            echo "Sitespeed output directory sitespeed-result/${{ env.RUN_ID }} not found. Creating report-mapping.json in sitespeed-result."
+          fi
+
           if [ ! -f "$MAPPING_FILE" ] || ! jq empty "$MAPPING_FILE" 2>/dev/null; then
             echo "Initializing $MAPPING_FILE with an empty array."
             echo "[]" > "$MAPPING_FILE"
           fi
           
+          if [ ! -w "$MAPPING_FILE" ]; then
+            echo "Error: $MAPPING_FILE is not writable. Checking permissions:"
+            ls -l "$MAPPING_FILE"
+            ls -ld "sitespeed-result"
+            exit 1
+          fi
+
           jq --arg id "${{ env.RUN_ID }}" \
              --arg url "$REPORT_URL" \
              --argjson ts_num "$(date +%s)" \
@@ -160,7 +177,6 @@ jobs:
           echo "--- report-mapping.json contents ---"
           cat "$MAPPING_FILE"
           echo "--- End report-mapping.json contents ---"
-          # set +x # Optional: unset if needed
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
