@@ -20,47 +20,90 @@ jobs:
 
       - name: Setup InfluxDB plugin
         run: |
-          # Create sitespeed.io plugins directory structure
           mkdir -p plugins
-          
-          # Clone the official plugin repository directly to the plugins directory
           git clone https://github.com/sitespeedio/plugin-influxdb.git plugins/influxdb
-          
-          # Install plugin dependencies
           cd plugins/influxdb && npm install && cd ../..
-          
-          # Debug - List directory structure
           echo "--- Plugin directory contents ---"
-          find plugins -ls
+          find plugins -ls # Using -ls for more details
           echo "--- End plugin directory contents ---"
 
-      - name: Setup and Start InfluxDB
+      - name: Setup and Start InfluxDB (Debug Enhanced)
+        shell: bash -eo pipefail 
         run: |
-          mkdir -p .influxdb-data # Isolate InfluxDB data
-          docker network create sitespeed-net
-          docker run -d --name influxdb \
+          set -x # Echo all commands before execution
+          echo "Current directory: $(pwd)"
+          echo "Listing current directory contents:"
+          ls -la
+          echo "Attempting to setup and start InfluxDB..."
+          echo "Verifying INFLUXDB_TOKEN presence (value will be masked): [${{ secrets.INFLUXDB_TOKEN }}]"
+          TOKEN_LENGTH=$(echo -n "${{ secrets.INFLUXDB_TOKEN }}" | wc -c)
+          echo "INFLUXDB_TOKEN length: $TOKEN_LENGTH"
+          if [ "$TOKEN_LENGTH" -eq 0 ]; then
+            echo "Error: INFLUXDB_TOKEN is empty!"
+            exit 1
+          fi
+          mkdir -p .influxdb-data
+          echo "Created .influxdb-data directory."
+          if ! docker network inspect sitespeed-net >/dev/null 2>&1; then
+            docker network create sitespeed-net
+            echo "Docker network 'sitespeed-net' created."
+          else
+            echo "Docker network 'sitespeed-net' already exists."
+          fi
+          echo "Preparing to run InfluxDB container..."
+          COMMAND="docker run -d --name influxdb \
             --network sitespeed-net \
             -p 8086:8086 \
-            -v "$(pwd)/.influxdb-data:/var/lib/influxdb2" \ # Use isolated data directory
+            -v \"$(pwd)/.influxdb-data:/var/lib/influxdb2\" \
             -e DOCKER_INFLUXDB_INIT_MODE=setup \
             -e DOCKER_INFLUXDB_INIT_USERNAME=surendracv \
             -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
             -e DOCKER_INFLUXDB_INIT_ORG=vega \
             -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
-            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${{ secrets.INFLUXDB_TOKEN }} \
-          influxdb:latest
-          
-          echo "Waiting for InfluxDB to start..."
-          sleep 10 # Give InfluxDB some time to initialize
+            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN='${{ secrets.INFLUXDB_TOKEN }}' \
+            influxdb:latest"
+          echo "Constructed Docker command (before execution):"
+          echo "$COMMAND"
+          echo "Executing InfluxDB container command..."
+          eval "$COMMAND"
+          DOCKER_RUN_EXIT_CODE=$? 
+          echo "Docker run command finished with exit code: $DOCKER_RUN_EXIT_CODE"
+          sleep 5 
+          echo "Checking InfluxDB container status..."
+          CONTAINER_ID=$(docker ps -q -f name=influxdb)
+          if [ -n "$CONTAINER_ID" ]; then
+            echo "InfluxDB container IS RUNNING (ID: $CONTAINER_ID)."
+            echo "Recent logs from InfluxDB container (last 50 lines):"
+            docker logs "$CONTAINER_ID" --tail 50
+            echo "Waiting a bit longer for InfluxDB to initialize..."
+            sleep 15 
+          else
+            echo "InfluxDB container IS NOT RUNNING."
+            STOPPED_CONTAINER_ID=$(docker ps -a -q -f name=influxdb -f status=exited -f status=created)
+            if [ -n "$STOPPED_CONTAINER_ID" ]; then
+              echo "InfluxDB container (ID: $STOPPED_CONTAINER_ID) exists but is stopped or failed to start."
+              echo "Logs from stopped/failed InfluxDB container (last 100 lines):"
+              docker logs "$STOPPED_CONTAINER_ID" --tail 100
+            else
+              echo "No InfluxDB container found (neither running nor stopped/failed)."
+              echo "This could indicate the 'docker run' command failed before even creating a container."
+            fi
+            if [ "$DOCKER_RUN_EXIT_CODE" -ne 0 ]; then
+                echo "The 'docker run' command itself failed with exit code $DOCKER_RUN_EXIT_CODE."
+            fi
+            exit 1 
+          fi
+          set +x
 
       - name: Run Sitespeed.io Test
         run: |
-          mkdir -p sitespeed-result # Ensure this directory is created by the runner user
+          set -x # Enable command echoing for this step too
+          mkdir -p sitespeed-result 
           docker run --rm \
-            --user "$(id -u):$(id -g)" \ # Run as current host user to ensure correct file ownership
+            --user "$(id -u):$(id -g)" \
             --network sitespeed-net \
             --shm-size=1g \
-            -v "$(pwd)/sitespeed-result:/sitespeed.io" \ # Mount the correct results directory
+            -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
@@ -70,32 +113,28 @@ jobs:
             --influxdb.host influxdb \
             --influxdb.version 2 \
             --influxdb.organisation vega \
-            --influxdb.token ${{ secrets.INFLUXDB_TOKEN }} \
+            --influxdb.token '${{ secrets.INFLUXDB_TOKEN }}' \
             --influxdb.bucket sitespeed
-
-      # - name: setting up permissions
-      #   run: |
-      #     sudo chown -R $USER:$USER .
+          set +x
 
       - name: Update report-mapping.json (append & sort desc)
         run: |
+          set -x 
           MAPPING_FILE="sitespeed-result/report-mapping.json"
           REPORT_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ env.RUN_ID }}/index.html"
-          
-          # Ensure the mapping file exists and is valid JSON
           if [ ! -f "$MAPPING_FILE" ] || ! jq empty "$MAPPING_FILE" 2>/dev/null; then
             echo "Initializing $MAPPING_FILE with an empty array."
             echo "[]" > "$MAPPING_FILE"
           fi
-          
           jq --arg id "${{ env.RUN_ID }}" \
              --arg url "$REPORT_URL" \
-             --argjson ts_num "$(date +%s)" \ # Pass timestamp as a number
+             --argjson ts_num "$(date +%s)" \
              '. += [{"run_id": $id, "timestamp": $ts_num, "report_url": $url}] | sort_by(.timestamp) | reverse' \
              "$MAPPING_FILE" > tmp.json && mv tmp.json "$MAPPING_FILE"
           echo "--- report-mapping.json contents ---"
           cat "$MAPPING_FILE"
           echo "--- End report-mapping.json contents ---"
+          set +x
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
@@ -103,6 +142,3 @@ jobs:
           github_token: ${{ secrets.PERSONAL_GITHUB_TOKEN }} 
           publish_dir: ./sitespeed-result
           publish_branch: gh-pages
-          # user_name: 'github-actions[bot]' 
-          # user_email: 'github-actions[bot]@users.noreply.github.com' 
-          # force_orphan: true 
