@@ -54,7 +54,7 @@ jobs:
           docker run --rm \
             --network sitespeed-net \
             --shm-size=1g \
-            -v "$(pwd)/sitespeed-result:/sitespeed.io" \
+            -v "$(pwd)/docker-safe/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
