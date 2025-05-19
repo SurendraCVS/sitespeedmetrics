@@ -119,7 +119,6 @@ jobs:
             -v "$(pwd)/plugins:/plugins" \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
-           # -d 2 \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
             --influxdb.host influxdb \
