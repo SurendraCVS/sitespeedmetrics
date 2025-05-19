@@ -63,7 +63,7 @@ jobs:
             -p 8086:8086 \
             -v \"$(pwd)/.influxdb-data:/var/lib/influxdb2\" \
             -e DOCKER_INFLUXDB_INIT_MODE=setup \
-            -e DOCKER_INFLUXDB_INIT_USERNAME=surendracv \
+            -e DOCKER_INFLUXDB_INIT_USERNAME=vegastack \
             -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
             -e DOCKER_INFLUXDB_INIT_ORG=vega \
             -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
