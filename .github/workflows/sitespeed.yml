@@ -8,7 +8,7 @@ on:
 
 jobs:
   run-sitespeed:
-    runs-on: ubuntu-latest
+    runs-on: influxdb
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -27,85 +27,6 @@ jobs:
           find plugins -ls 
           echo "--- End plugin directory contents ---"
 
-      - name: Setup and Start InfluxDB (Debug Enhanced)
-        shell: bash 
-        run: |
-          set -eo pipefail 
-          set -x           
-
-          echo "Current directory: $(pwd)"
-          echo "Listing current directory contents:"
-          ls -la
-
-          echo "Attempting to setup and start InfluxDB..."
-          echo "Verifying INFLUXDB_TOKEN presence (value will be masked): [${{ secrets.INFLUXDB_TOKEN }}]"
-          
-          TOKEN_LENGTH=$(echo -n "${{ secrets.INFLUXDB_TOKEN }}" | wc -c)
-          echo "INFLUXDB_TOKEN length: $TOKEN_LENGTH"
-          if [ "$TOKEN_LENGTH" -eq 0 ]; then
-            echo "Error: INFLUXDB_TOKEN is empty!"
-            exit 1
-          fi
-
-          mkdir -p .influxdb-data
-          echo "Created .influxdb-data directory."
-
-          if ! docker network inspect sitespeed-net >/dev/null 2>&1; then
-            docker network create sitespeed-net
-            echo "Docker network 'sitespeed-net' created."
-          else
-            echo "Docker network 'sitespeed-net' already exists."
-          fi
-
-          echo "Preparing to run InfluxDB container..."
-          COMMAND="docker run -d --name influxdb \
-            --network sitespeed-net \
-            -p 8086:8086 \
-            -v \"$(pwd)/.influxdb-data:/var/lib/influxdb2\" \
-            -e DOCKER_INFLUXDB_INIT_MODE=setup \
-            -e DOCKER_INFLUXDB_INIT_USERNAME=vegastack \
-            -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
-            -e DOCKER_INFLUXDB_INIT_ORG=vega \
-            -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
-            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN='${{ secrets.INFLUXDB_TOKEN }}' \
-            influxdb:latest"
-          
-          echo "Constructed Docker command (before execution):"
-          echo "$COMMAND"
-
-          echo "Executing InfluxDB container command..."
-          eval "$COMMAND"
-          DOCKER_RUN_EXIT_CODE=$? 
-
-          echo "Docker run command finished with exit code: $DOCKER_RUN_EXIT_CODE"
-          sleep 5 
-
-          echo "Checking InfluxDB container status..."
-          CONTAINER_ID=$(docker ps -q -f name=influxdb)
-
-          if [ -n "$CONTAINER_ID" ]; then
-            echo "InfluxDB container IS RUNNING (ID: $CONTAINER_ID)."
-            echo "Recent logs from InfluxDB container (last 50 lines):"
-            docker logs "$CONTAINER_ID" --tail 50
-            echo "Waiting a bit longer for InfluxDB to initialize..."
-            sleep 15 
-          else
-            echo "InfluxDB container IS NOT RUNNING."
-            STOPPED_CONTAINER_ID=$(docker ps -a -q -f name=influxdb -f status=exited -f status=created)
-            if [ -n "$STOPPED_CONTAINER_ID" ]; then
-              echo "InfluxDB container (ID: $STOPPED_CONTAINER_ID) exists but is stopped or failed to start."
-              echo "Logs from stopped/failed InfluxDB container (last 100 lines):"
-              docker logs "$STOPPED_CONTAINER_ID" --tail 100
-            else
-              echo "No InfluxDB container found (neither running nor stopped/failed)."
-            fi
-            
-            if [ "$DOCKER_RUN_EXIT_CODE" -ne 0 ]; then
-                echo "The 'docker run' command itself failed with exit code $DOCKER_RUN_EXIT_CODE."
-            fi
-            exit 1 
-          fi
-          
       - name: Run Sitespeed.io Test
         shell: bash 
         run: |
@@ -121,7 +42,7 @@ jobs:
             https://vegastack.com \
             --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
-            --influxdb.host influxdb \
+            --influxdb.host localhost \
             --influxdb.version 2 \
             --influxdb.organisation vega \
             --influxdb.token '${{ secrets.INFLUXDB_TOKEN }}' \
