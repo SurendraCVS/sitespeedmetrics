@@ -67,7 +67,7 @@ jobs:
             -e DOCKER_INFLUXDB_INIT_PASSWORD=Vegastack@@ \
             -e DOCKER_INFLUXDB_INIT_ORG=vega \
             -e DOCKER_INFLUXDB_INIT_BUCKET=sitespeed \
-            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN='randomstring' \
+            -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN='${{ secrets.INFLUXDB_TOKEN }}' \
             influxdb:latest"
           
           echo "Constructed Docker command (before execution):"
