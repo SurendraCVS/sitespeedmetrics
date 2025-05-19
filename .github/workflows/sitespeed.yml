@@ -16,6 +16,7 @@ jobs:
       - name: Generate Run ID (human-readable date)
         run: |
           echo "RUN_ID=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
+          echo "RUN_ID=$(date +%Y-%m-%d_%H-%M-%S)" >> $RUN_ID
           echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
 
       - name: Setup InfluxDB plugin
