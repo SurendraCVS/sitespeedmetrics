@@ -48,7 +48,7 @@ jobs:
             --influxdb.organisation vega \
             --influxdb.token '${{ secrets.INFLUXDB_TOKEN }}' \
             --influxdb.bucket sitespeed \
-            --influxdb.tags "env='${{ env.RUN_ID }}'" \
+            --influxdb.tags "${{ env.RUN_ID }}" \
             --browsertime.chrome.args="no-sandbox" \
             --browsertime.chrome.args="disable-dev-shm-usage" \
             --browsertime.firefox.preference security.sandbox.content.level=0
