@@ -1,109 +1,198 @@
+# GitHub Actions Workflow for running Sitespeed.io tests,
+# publishing results to InfluxDB, and deploying reports to GitHub Pages.
 name: Run Sitespeed Test & Publish Report
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual triggering
   push:
     branches:
-      - main
+      - main # Triggers on pushes to the main branch
 
 jobs:
-  run-sitespeed:
-    runs-on: influxdb
+  run-sitespeed-and-deploy:
+    runs-on: ubuntu-latest # Use a standard GitHub-hosted runner
+    permissions:
+      contents: write # Needed to push to gh-pages branch
+      # Add other permissions if needed by your specific setup (e.g., packages for Docker image pulling if private)
+
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        # No need to specify repo or token for checking out the current repository
 
-      - name: Generate Run ID (human-readable date)
+      - name: Generate Run ID and Timestamp
+        id: run_details # Give this step an ID to reference its outputs
         run: |
           echo "RUN_ID=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
           echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
+          # Also make them available as step outputs for easier reference if needed elsewhere
+          echo "run_id_output=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_OUTPUT
+          echo "timestamp_output=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Setup InfluxDB plugin
+      - name: Setup Sitespeed.io InfluxDB plugin
         run: |
+          echo "Setting up Sitespeed.io InfluxDB plugin..."
           mkdir -p plugins
           git clone https://github.com/sitespeedio/plugin-influxdb.git plugins/influxdb
-          cd plugins/influxdb && npm install && cd ../..
+          cd plugins/influxdb
+          npm install
+          cd ../.. # Return to the root directory
           echo "--- Plugin directory contents ---"
           find plugins -ls 
           echo "--- End plugin directory contents ---"
 
       - name: Run Sitespeed.io Test
-        shell: bash 
+        # This step runs the Sitespeed.io Docker container.
+        # Ensure your InfluxDB instance is accessible from the runner.
+        # If InfluxDB is also a Docker container, they might need to be on the same Docker network.
+        # If InfluxDB is external, ensure its hostname/IP is resolvable and firewall rules allow connection.
         run: |
-          set -eo pipefail 
-          set -x 
-          mkdir -p sitespeed-result 
+          set -eo pipefail # Exit on error, treat unset variables as an error, and propagate pipe failures
+          set -x # Print each command before executing it (useful for debugging)
+          
+          mkdir -p sitespeed-result # Create the directory where Sitespeed will store results
+
+          # Run the Sitespeed.io Docker container
+          # --network host might be needed if InfluxDB is running on the runner's host or a local network.
+          # If InfluxDB is a service in your workflow or on a specific Docker network, adjust accordingly.
           docker run --rm \
-            --network sitespeed-net \
             --shm-size=2g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
-            -e RUN_ENV=${{ env.RUN_ID }} \
+            -e RUN_ENV="${{ env.RUN_ID }}" \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
-            --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
+            --outputFolder "/sitespeed.io/${{ env.RUN_ID }}" \
             --plugins.add /plugins/influxdb \
-            --influxdb.host influxdb \
+            --influxdb.host "${{ secrets.INFLUXDB_HOST }}" \
+            --influxdb.port "${{ secrets.INFLUXDB_PORT || '8086' }}" \
+            --influxdb.protocol "${{ secrets.INFLUXDB_PROTOCOL || 'http' }}" \
             --influxdb.version 2 \
-            --influxdb.organisation vega \
-            --influxdb.token '${{ secrets.INFLUXDB_TOKEN }}' \
-            --influxdb.bucket sitespeed \
-            --influxdb.tags "env='${{ env.RUN_ID }}'" \
+            --influxdb.organisation "${{ secrets.INFLUXDB_ORG }}" \
+            --influxdb.token "${{ secrets.INFLUXDB_TOKEN }}" \
+            --influxdb.bucket "sitespeed" \
+            --influxdb.tags "run_id=${{ env.RUN_ID }},project=vegastack,environment=production" \
+            --browsertime.iterations 3 \
+            --browsertime.connectivity.profile cable \
             --browsertime.chrome.args="no-sandbox" \
             --browsertime.chrome.args="disable-dev-shm-usage" \
-            --browsertime.firefox.preference security.sandbox.content.level=0
+            --browsertime.firefox.preference security.sandbox.content.level=0 
+
+          echo "Sitespeed.io test completed. Results are in ./sitespeed-result/${{ env.RUN_ID }}"
 
       - name: Chown Sitespeed Results
-        shell: bash
+        # This step changes the ownership of the Docker-generated files to the runner user.
+        # This is often necessary because files created by Docker containers run as root.
         run: |
           set -x
           echo "Changing ownership of sitespeed-result directory..."
-          if [ -d "./sitespeed-result" ]; then
-            sudo chown -R $(id -u):$(id -g) ./sitespeed-result
-            echo "Ownership changed for ./sitespeed-result"
-            ls -ld ./sitespeed-result 
-            ls -l ./sitespeed-result 
+          # Check if the specific run ID directory exists
+          if [ -d "./sitespeed-result/${{ env.RUN_ID }}" ]; then
+            sudo chown -R "$(id -u):$(id -g)" "./sitespeed-result/${{ env.RUN_ID }}"
+            echo "Ownership changed for ./sitespeed-result/${{ env.RUN_ID }}"
+            echo "Directory listing after chown:"
+            ls -ld "./sitespeed-result/${{ env.RUN_ID }}"
+            ls -l "./sitespeed-result/${{ env.RUN_ID }}"
           else
-            echo "Directory ./sitespeed-result does not exist. Skipping chown."
+            echo "Error: Directory ./sitespeed-result/${{ env.RUN_ID }} does not exist. Sitespeed run might have failed."
+            # Consider failing the workflow here if the output is critical
+            # exit 1 
+          fi
+          # Also ensure the parent sitespeed-result directory is writable if report-mapping.json is directly inside it
+          # (though the refined logic below places it within the gh-pages checkout)
+          if [ -d "./sitespeed-result" ]; then
+            sudo chown -R "$(id -u):$(id -g)" "./sitespeed-result"
           fi
 
-      - name: Update report-mapping.json (append & sort desc)
-        shell: bash 
+
+      - name: Prepare content for GitHub Pages
+        id: prepare_gh_pages
+        # This step checks out the existing gh-pages branch (if any),
+        # copies the new report into it, and updates the report-mapping.json.
         run: |
-          set -eo pipefail 
-          set -x 
-          MAPPING_FILE="sitespeed-result/report-mapping.json"
+          set -eo pipefail
+          set -x
+
+          GH_PAGES_DIR="gh-pages-content" # Temporary directory to build the content for the gh-pages branch
+          mkdir -p "$GH_PAGES_DIR"
+
+          # Clone the existing gh-pages branch into the temporary directory
+          # Use GITHUB_TOKEN for authentication.
+          # The `|| true` prevents the script from failing if the branch doesn't exist yet (e.g., first run).
+          git clone --depth 1 --branch gh-pages \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            "$GH_PAGES_DIR" 2>/dev/null || echo "gh-pages branch not found or clone failed. Will create a new one."
+          
+          # If the clone failed or the directory is still empty (e.g. first run, or branch exists but is empty),
+          # ensure the directory exists for subsequent operations.
+          mkdir -p "$GH_PAGES_DIR" 
+
+          # Define source and destination for the new report
+          NEW_REPORT_SOURCE_DIR="./sitespeed-result/${{ env.RUN_ID }}"
+          NEW_REPORT_DEST_DIR="$GH_PAGES_DIR/${{ env.RUN_ID }}"
+
+          echo "Copying new report from $NEW_REPORT_SOURCE_DIR to $NEW_REPORT_DEST_DIR"
+          if [ -d "$NEW_REPORT_SOURCE_DIR" ]; then
+            mkdir -p "$NEW_REPORT_DEST_DIR" # Ensure the destination directory for the specific run exists
+            # Copy all contents of the new report source to its destination in the gh-pages content
+            cp -r "$NEW_REPORT_SOURCE_DIR/." "$NEW_REPORT_DEST_DIR/"
+          else
+            echo "Error: New report directory $NEW_REPORT_SOURCE_DIR not found! Cannot copy to $GH_PAGES_DIR."
+            exit 1 # Fail the step if the new report isn't there
+          fi
+
+          # Update report-mapping.json
+          MAPPING_FILE="$GH_PAGES_DIR/report-mapping.json"
           REPORT_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ env.RUN_ID }}/index.html"
           
-          if [ ! -d "sitespeed-result/${{ env.RUN_ID }}" ]; then
-            echo "Sitespeed output directory sitespeed-result/${{ env.RUN_ID }} not found. Creating report-mapping.json in sitespeed-result."
-          fi
-
-          if [ ! -f "$MAPPING_FILE" ] || ! jq empty "$MAPPING_FILE" 2>/dev/null; then
-            echo "Initializing $MAPPING_FILE with an empty array."
-            echo "[]" > "$MAPPING_FILE"
+          # Read existing JSON content, or initialize if file doesn't exist or is invalid
+          CURRENT_JSON_CONTENT="[]" # Default to an empty JSON array
+          if [ -f "$MAPPING_FILE" ] && jq empty "$MAPPING_FILE" >/dev/null 2>&1; then
+            echo "Found existing and valid $MAPPING_FILE. Reading content."
+            CURRENT_JSON_CONTENT=$(cat "$MAPPING_FILE")
+          else
+            echo "$MAPPING_FILE not found, is empty, or contains invalid JSON. Initializing with an empty array."
           fi
           
-          if [ ! -w "$MAPPING_FILE" ]; then
-            echo "Error: $MAPPING_FILE is not writable. Checking permissions:"
-            ls -l "$MAPPING_FILE"
-            ls -ld "sitespeed-result"
-            exit 1
-          fi
+          # Add the new report entry to the JSON array, then sort by timestamp (descending)
+          # Use env.TIMESTAMP which was set earlier
+          UPDATED_JSON_CONTENT=$(echo "$CURRENT_JSON_CONTENT" | jq \
+            --arg run_id "${{ env.RUN_ID }}" \
+            --arg report_url "$REPORT_URL" \
+            --argjson timestamp "${{ env.TIMESTAMP }}" \
+            '. += [{"run_id": $run_id, "timestamp": $timestamp, "report_url": $report_url}] | sort_by(.timestamp) | reverse')
+          
+          # Write the updated and sorted JSON back to the mapping file
+          echo "$UPDATED_JSON_CONTENT" > "$MAPPING_FILE"
 
-          jq --arg id "${{ env.RUN_ID }}" \
-             --arg url "$REPORT_URL" \
-             --argjson ts_num "$(date +%s)" \
-             '. += [{"run_id": $id, "timestamp": $ts_num, "report_url": $url}] | sort_by(.timestamp) | reverse' \
-             "$MAPPING_FILE" > tmp.json && mv tmp.json "$MAPPING_FILE"
-          echo "--- report-mapping.json contents ---"
+          echo "--- $GH_PAGES_DIR contents (listing top level) ---"
+          ls -A "$GH_PAGES_DIR"
+          echo "--- $MAPPING_FILE contents ---"
           cat "$MAPPING_FILE"
-          echo "--- End report-mapping.json contents ---"
+          echo "--- End $MAPPING_FILE contents ---"
+          
+          # Set an output for the deploy step to use this directory
+          echo "publish_directory=$GH_PAGES_DIR" >> $GITHUB_OUTPUT
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.PERSONAL_GITHUB_TOKEN }} 
-          publish_dir: ./sitespeed-result
-          publish_branch: gh-pages
+          github_token: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN usually has enough permissions for same-repo deploys
+          # If GITHUB_TOKEN fails, or for cross-repository deploys, use a PAT:
+          # personal_token: ${{ secrets.PERSONAL_ACCESS_TOKEN_FOR_GH_PAGES }}
+          publish_dir: ${{ steps.prepare_gh_pages.outputs.publish_directory }} # Directory prepared in the previous step
+          publish_branch: gh-pages # The branch to publish to
+          user_name: 'github-actions[bot]' # Name for the commit
+          user_email: 'github-actions[bot]@users.noreply.github.com' # Email for the commit
+          commit_message: "Deploy Sitespeed report for run ${{ env.RUN_ID }}" # Commit message
+          # keep_files: false (default) is correct here. 
+          # The publish_dir contains the complete desired state of the branch.
+          # The action will synchronize the gh-pages branch with the content of publish_dir.
+          # force_orphan: false (default) is usually fine. If you want a clean history each time, set to true.
+
+      - name: Clean up local gh-pages content directory
+        if: always() # Always run this step to clean up, even if previous steps fail
+        run: |
+          echo "Cleaning up temporary directory ${{ steps.prepare_gh_pages.outputs.publish_directory }}..."
+          rm -rf "${{ steps.prepare_gh_pages.outputs.publish_directory }}"
 
