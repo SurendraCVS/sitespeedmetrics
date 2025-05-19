@@ -34,7 +34,6 @@ jobs:
           set -x 
           mkdir -p sitespeed-result 
           docker run --rm \
-            --network sitespeed-net \
             --shm-size=2g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
