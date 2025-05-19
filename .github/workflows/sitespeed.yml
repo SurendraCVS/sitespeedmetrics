@@ -10,7 +10,7 @@ on:
 
 jobs:
   run-sitespeed-and-deploy:
-    runs-on: ubuntu-latest # Use a standard GitHub-hosted runner
+    runs-on: influxdb # Use a standard GitHub-hosted runner
     permissions:
       contents: write # Needed to push to gh-pages branch
       # Add other permissions if needed by your specific setup (e.g., packages for Docker image pulling if private)
