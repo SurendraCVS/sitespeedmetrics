@@ -56,24 +56,21 @@ jobs:
           # --network host might be needed if InfluxDB is running on the runner's host or a local network.
           # If InfluxDB is a service in your workflow or on a specific Docker network, adjust accordingly.
           docker run --rm \
+            --network sitespeed-net \
             --shm-size=2g \
             -v "$(pwd)/sitespeed-result:/sitespeed.io" \
             -v "$(pwd)/plugins:/plugins" \
-            -e RUN_ENV="${{ env.RUN_ID }}" \
+            -e RUN_ENV=${{ env.RUN_ID }} \
             sitespeedio/sitespeed.io:latest \
             https://vegastack.com \
-            --outputFolder "/sitespeed.io/${{ env.RUN_ID }}" \
+            --outputFolder /sitespeed.io/${{ env.RUN_ID }} \
             --plugins.add /plugins/influxdb \
-            --influxdb.host "${{ secrets.INFLUXDB_HOST }}" \
-            --influxdb.port "${{ secrets.INFLUXDB_PORT || '8086' }}" \
-            --influxdb.protocol "${{ secrets.INFLUXDB_PROTOCOL || 'http' }}" \
+            --influxdb.host influxdb \
             --influxdb.version 2 \
-            --influxdb.organisation "${{ secrets.INFLUXDB_ORG }}" \
+            --influxdb.organisation vega \
             --influxdb.token "${{ secrets.INFLUXDB_TOKEN }}" \
             --influxdb.bucket "sitespeed" \
-            --influxdb.tags "run_id=${{ env.RUN_ID }},project=vegastack,environment=production" \
-            --browsertime.iterations 3 \
-            --browsertime.connectivity.profile cable \
+            --influxdb.tags "env=${{ env.RUN_ID }}" \
             --browsertime.chrome.args="no-sandbox" \
             --browsertime.chrome.args="disable-dev-shm-usage" \
             --browsertime.firefox.preference security.sandbox.content.level=0 
